@@ -3,27 +3,55 @@
 set -ex
 
 CORPUS=$1
-VOCAB=$2
+VALID=$2
+SEED_VOCAB=$3
+TARGET_VOCAB_SIZE=$4
 
-TMP=$(mktemp experiments/tmp.XXXXX)
+TMP=$(mktemp experiments/XXXXX)
 
-# shuffle corpus and split it
-shuf $CORPUS | head -n 1000000 | split -l 1000 --numeric-suffixes=1 -a 5 - ${TMP}.split.
+VOCAB_CYCLE_STEPS=10 # Number of times that we sample bigrams
+VOCAB=${TMP}.vocab
 
-MAX_FILES=$(ls ${TMP}.split.* | wc -l)
+cp ${SEED_VOCAB} ${VOCAB}
 
-qsub -t 1-${MAX_FILES} -N sample_bigrams -e ${TMP}.bigrams.0.log -o ${TMP}.bigrams.0 -sync y qsub_array_sample_bigrams.sh $VOCAB uniform ${TMP}.split
+# TODO wrap this in one large for loop for decreasing vocab size
+while true; do
+    VOCAB_SIZE=$(wc -l < $VOCAB)
 
-python -m neuralpiece.train_estimator $VOCAB ${TMP}.bigrams.0 ${TMP}.model.0
+    # shuffle corpus and split it
+    shuf $CORPUS | head -n 200000 | split -l 400 --numeric-suffixes=1 -a 5 - ${TMP}.split.
 
-for I in {1..10}; do
-    rm ${TMP}.split.*
-    shuf $CORPUS | head -n 200000 | split -l 200 --numeric-suffixes=1 -a 5 - ${TMP}.split.
     MAX_FILES=$(ls ${TMP}.split.* | wc -l)
 
-    qsub -t 1-${MAX_FILES} -N sample_bigrams -e ${TMP}.bigrams.${I}.log -o ${TMP}.bigrams.${I} -sync y qsub_array_sample_bigrams.sh $VOCAB ${TMP}.model.$((I - 1)) ${TMP}.split
+    qsub -t 1-${MAX_FILES} -N sample_bigrams -pe smp 1 -e ${TMP}.bigrams.0.log -o ${TMP}.bigrams.0 -sync y \
+        qsub_array_sample_bigrams.sh $VOCAB uniform ${TMP}.split
 
-    python -m neuralpiece.train_estimator $VOCAB ${TMP}.bigrams.${I} ${TMP}.model.${I} --load-estimator ${TMP}.model.$((I - 1))
+    python -m neuralpiece.train_estimator $VOCAB ${TMP}.bigrams.0 ${TMP}.model.0 2>&1 | tee ${TMP}.model.0.log
+    python -m neuralpiece.tokenize $VOCAB ${TMP}.model.0.numpy $VALID | tee ${TMP}.valid.0
+
+    for I in `seq 1 ${VOCAB_CYCLE_STEPS}`; do
+        rm ${TMP}.split.*
+        shuf $CORPUS | head -n 50000 | split -l 80 --numeric-suffixes=1 -a 5 - ${TMP}.split.
+        MAX_FILES=$(ls ${TMP}.split.* | wc -l)
+
+        qsub -t 1-${MAX_FILES} -N sample_bigrams -e ${TMP}.bigrams.${I}.log -o ${TMP}.bigrams.${I} -sync y \
+            qsub_array_sample_bigrams.sh $VOCAB ${TMP}.model.$((I - 1)).numpy ${TMP}.split
+
+        python -m neuralpiece.train_estimator \
+            $VOCAB ${TMP}.bigrams.${I} ${TMP}.model.${I} \
+            --load-estimator ${TMP}.model.$((I - 1)) \
+            --learning-rate 5e-6 2>&1 | tee ${TMP}.model.${I}.log
+        python -m neuralpiece.tokenize $VOCAB ${TMP}.model.${I}.numpy $VALID | tee ${TMP}.valid.${I}
+    done
+
+    rm ${TMP}.split.*
+
+    if [ $VOCAB_SIZE -eq $TARGET_VOCAB_SIZE ]; then
+        break
+    fi
+
+    NEW_VOCAB_SIZE=$(echo "print(max(${TARGET_VOCAB_SIZE}, int(0.95 * ${VOCAB_SIZE})))")
+    python -m neuralpiece.reduce_vocab ${VOCAB} ${TMP}.model.${VOCAB_CYCLE_STEPS} > ${TMP}.new_vocab
+    mv ${TMP}.new_vocab ${TMP}.vocab
 done
 
-rm ${TMP}.split.*
