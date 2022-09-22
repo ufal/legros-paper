@@ -38,10 +38,10 @@ while true; do
             qsub_array_sample_bigrams.sh $VOCAB ${TMP}.model.${CYCLE}.$((I - 1)).numpy ${TMP}.split
 
         python -m neuralpiece.train_estimator \
-            $VOCAB ${TMP}.bigrams.${I} ${TMP}.model.${I} \
-            --load-estimator ${TMP}.model.$((I - 1)) \
-            --learning-rate 5e-6 2>&1 | tee ${TMP}.model.${I}.log
-        python -m neuralpiece.tokenize $VOCAB ${TMP}.model.${I}.numpy $VALID | tee ${TMP}.valid.${I}
+            $VOCAB ${TMP}.bigrams.${CYCLE}.${I} ${TMP}.model.${CYCLE}.${I} \
+            --load-estimator ${TMP}.model.${CYCLE}.$((I - 1)) \
+            --learning-rate 5e-6 2>&1 | tee ${TMP}.model.${CYCLE}.${I}.log
+        python -m neuralpiece.tokenize $VOCAB ${TMP}.model.${CYCLE}.${I}.numpy $VALID | tee ${TMP}.valid.${CYCLE}.${I}
     done
 
     rm ${TMP}.split.*
@@ -50,8 +50,8 @@ while true; do
         break
     fi
 
-    NEW_VOCAB_SIZE=$(echo "print(max(${TARGET_VOCAB_SIZE}, int(0.95 * ${VOCAB_SIZE})))")
-    python -m neuralpiece.reduce_vocab ${VOCAB} ${TMP}.model.${VOCAB_CYCLE_STEPS} > ${TMP}.new_vocab
+    NEW_VOCAB_SIZE=$(echo "print(max(${TARGET_VOCAB_SIZE}, int(0.90 * ${VOCAB_SIZE})))" | python)
+    python -m neuralpiece.reduce_vocab ${VOCAB} ${TMP}.model.${CYCLE}.${VOCAB_CYCLE_STEPS} ${NEW_VOCAB_SIZE} > ${TMP}.new_vocab
 
     CYCLE=$(( CYCLE + 1 ))
     VOCAB=${TMP}.vocab.${CYCLE}
