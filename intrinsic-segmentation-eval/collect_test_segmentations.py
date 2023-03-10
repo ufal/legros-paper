@@ -18,50 +18,82 @@ random.seed(1348)
 logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
 
 
+def load_segmentations_from_file(handle, segmentation_dict):
+    for line in handle:
+        tokens = line.strip().split("\t")
+        word = tokens[0].lower()
+        segmentation = tokens[3].lower()
+        if not segmentation:
+            continue
+        segments = segmentation.lower().split(" + ")
+        assert "".join(segments) == word
+        index = 0
+        for seg in segments:
+            index += len(seg)
+            segmentation_dict[word].add(index)
+
+
+def segmentation_from_indices(word, indices):
+    prev_start = 0
+    segments = []
+    for i, char in enumerate(word):
+        if i in indices:
+            if i in indices:
+                segments.append(word[prev_start:i])
+                prev_start = i
+    segments.append(word[prev_start:])
+    return segments
+
+
 def main():
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("vocabulary", type=argparse.FileType("r"))
-    parser.add_argument("segmentation", type=argparse.FileType("r"))
-    parser.add_argument("--skip-first", type=int, default=10000)
+    parser.add_argument("segmentations", type=argparse.FileType("r"), nargs="+")
+    parser.add_argument("--base-count", type=int, default=1000)
     parser.add_argument("--min-freq", type=int, default=10)
-    parser.add_argument(
-        "--count", type=int, default=10000,
-        help="Size of the final test set.")
     args = parser.parse_args()
 
-    allowed_words = set()
-
-    for i, line in enumerate(args.vocabulary):
-        if i < args.skip_first:
-            continue
+    logging.info("Load vocabulary: %s.", args.vocabulary)
+    vocab = []
+    for line in args.vocabulary:
         word, count_str = line.strip().split("\t")
         if len(word) < 2:
             continue
         count = int(count_str)
         if count < args.min_freq:
             break
-        allowed_words.add(word)
+        vocab.append(word)
     args.vocabulary.close()
+    logging.info("Vocabulary size: %d.", len(vocab))
 
-    used_words = set()
-    segmentation_pool = []
-    for line in args.segmentation:
-        tokens = line.strip().split("\t")
-        word = tokens[0].lower()
-        segmentation = tokens[3].lower()
-        if not segmentation:
-            continue
-        if word in allowed_words and word not in used_words:
-            used_words.add(word)
-            format_seg = segmentation.replace(" + ", " ")
-            segmentation_pool.append(f"{word.lower()}\t{format_seg.lower()}")
+    segmentations = defaultdict(set)
+    for seg_file in args.segmentations:
+        logging.info("Load segmentations: %s", seg_file)
+        load_segmentations_from_file(seg_file, segmentations)
+    logging.info("Total %d segmentations.", len(segmentations))
 
-    if len(segmentation_pool) < args.count:
-        segmentations = segmentation_pool
-    else:
-        segmentations = random.sample(segmentation_pool, args.count)
-    for item in segmentations:
-        print(item)
+    test_set = []
+    vocab_tenth = len(vocab) // 10
+    for decile, start in enumerate(range(0, len(vocab), vocab_tenth)):
+        if decile > 9:
+            break
+        decile_count = args.base_count // (decile + 1)
+        logging.info("Sample decile %d -> %d words.", decile + 1, decile_count)
+        vocab_part = set(vocab[start:start + vocab_tenth])
+
+        decile_segmentations = [
+            (k, segmentation_from_indices(k, v))
+            for k, v in segmentations.items()
+            if k in vocab_part]
+
+        if len(decile_segmentations) <= decile_count:
+            test_set.extend(decile_segmentations)
+        else:
+            test_set.extend(
+                random.sample(decile_segmentations, decile_count))
+
+    for word, seg in test_set:
+        print(f"{word}\t{' '.join(seg)}")
 
     logging.info("Done.")
 
