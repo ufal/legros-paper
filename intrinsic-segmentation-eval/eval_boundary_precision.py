@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
+
 """Evaluation of the precision on morphological segmentation boundaries.
 
 Small parts of the code are copied from the SIGMORPHON 2022 Morpheme
 Segmentation Shared Task Evaluation Script.
 """
 
-SEP = " "
+import argparse
 
 import numpy as np
 from scipy.stats import bootstrap
+
+
+SEP = " "
 
 
 def read_tsv(path):
@@ -48,7 +52,12 @@ def get_boundary_indices(segments):
     return boundaries
 
 
-def main(args):
+def main():
+    parser = argparse.ArgumentParser(description='Measure precision on morphological segmentation boundaries')
+    parser.add_argument("--gold", help="Gold standard", required=True, type=str)
+    parser.add_argument("--guess", help="Model output", required=True, type=str)
+    args = parser.parse_args()
+
     gold = read_tsv(args.gold)
     guess = read_tsv(args.guess)
 
@@ -61,14 +70,13 @@ def main(args):
     precisions = []
 
     for i, (ref, hyp) in enumerate(zip(gold, guess)):
-        boundaries_made = 1
-        correct_boundaries_made = 1
 
         ref_breaks = get_boundary_indices(ref)
         hyp_breaks = get_boundary_indices(hyp)
 
         boundaries_made += len(hyp_breaks)
 
+        correct_boundaries_made = 1
         for br in ref_breaks:
             if br in hyp_breaks:
                 correct_boundaries_made += 1
@@ -83,9 +91,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description='Measure precision on morphological segmentation boundaries')
-    parser.add_argument("--gold", help="Gold standard", required=True, type=str)
-    parser.add_argument("--guess", help="Model output", required=True, type=str)
-    opt = parser.parse_args()
-    main(opt)
+    main()
