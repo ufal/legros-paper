@@ -3,7 +3,7 @@
 #SBATCH -J train-smp
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=40G
-#SBATCH -o logs/smp-train-%A.out
+#SBATCH -o log/smp-train-%A.out
 
 set -ex
 

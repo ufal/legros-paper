@@ -70,12 +70,10 @@ def main():
     precisions = []
 
     for i, (ref, hyp) in enumerate(zip(gold, guess)):
-
         ref_breaks = get_boundary_indices(ref)
         hyp_breaks = get_boundary_indices(hyp)
 
-        boundaries_made += len(hyp_breaks)
-
+        boundaries_made = 1 + len(hyp_breaks)
         correct_boundaries_made = 1
         for br in ref_breaks:
             if br in hyp_breaks:
