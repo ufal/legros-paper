@@ -1,3 +1,9 @@
 [submodule "bristol-mt-morphology"]
 	path = bristol-mt-morphology
 	url = https://github.com/LowResourceLanguages/bristol-mt-morphology
+[submodule "americasnlp2021"]
+	path = americasnlp2021
+	url = git@github.com:AmericasNLP/americasnlp2021
+[submodule "marian-dev"]
+	path = marian-dev
+	url = git@github.com:marian-nmt/marian-dev
