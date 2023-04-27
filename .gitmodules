@@ -7,3 +7,6 @@
 [submodule "marian-dev"]
 	path = marian-dev
 	url = git@github.com:marian-nmt/marian-dev
+[submodule "cpp-implementation/3rd_party/eigen"]
+	path = cpp-implementation/3rd_party/eigen
+	url = https://gitlab.com/libeigen/eigen.git
