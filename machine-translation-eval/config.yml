@@ -1,0 +1,62 @@
+model: model-ours50k/model.npz
+type: transformer
+seed: 1348
+
+valid-metrics:
+  - cross-entropy
+  - bleu
+
+# Occassionally our tokenization can lead to malformed UTF charcters which
+# causes chrF to break. This is why it we only measure cross-entropy and BLEU.
+
+quiet-translation: true
+valid-mini-batch: 40
+beam-size: 5
+normalize: 1
+word-penalty: 1.2
+
+max-length: 100
+
+mini-batch-fit: true
+maxi-batch-sort: src
+shuffle-in-ram: true
+maxi-batch: 1000
+workspace: 9000
+
+# This is basically the Transformer Base setup
+enc-depth: 6
+dec-depth: 6
+dim-emb: 512
+transformer-dim-ffn: 2048
+transformer-heads: 8
+tied-embeddings-all: true
+
+# Setup from the low resource paper on American langauges
+#transformer-dropout: 0.4
+#transformer-dropout-ffn: 0.2
+#transformer-dropout-attention: 0.2
+#transformer-preprocess: n
+#transformer-postprocess: da
+#transformer-postprocess-top: n
+
+early-stopping: 15
+valid-freq: 1000
+save-freq: 0
+disp-freq: 200
+
+learn-rate: 1e-04
+lr-warmup: 4000
+lr-warmup-start-rate: 1e-07
+lr-decay-inv-sqrt: 4000
+optimizer: adam
+optimizer-params:
+  - 0.9
+  - 0.98
+  - 1e-08
+
+clip-norm: 0
+label-smoothing: 0.2
+
+sync-sgd: true
+optimizer-delay: 1
+after-epochs: 500
