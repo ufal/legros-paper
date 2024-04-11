@@ -6,7 +6,8 @@
 
 set -ex
 
-CPP_HOME=/lnet/troja/projects/neuralpiece/cpp-implementation
+#CPP_HOME=/lnet/troja/projects/neuralpiece/cpp-implementation
+CPP_HOME=/lnet/troja/projects/neuralpiece/subword-segmentation
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -32,13 +33,21 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ ${INIT_TYPE} != bpe ] && [ ${INIT_TYPE} != sp ]; then
-    echo "Initialization type (-i --init) must be 'sp' or 'bpe'." > /dev/stderr
+if [ ${INIT_TYPE} != bpe ] && [ ${INIT_TYPE} != sp ] && [ ${INIT_TYPE} != morfessor ]; then
+    echo "Initialization type (-i --init) must be 'sp' or 'bpe' or 'morfessor'." > /dev/stderr
 fi
 
 DATA=../../plaintext/${LNG}.lc.txt
 FASTTEXT=../../fasttext
-OUT=${LNG}/experiments/from_${INIT_TYPE}${SP_SIZE}k
+if [ ${INIT_TYPE} == morfessor ]; then
+    OUT=${LNG}/experiments/from_morfessor
+else
+    if [ -z ${SP_SIZE} ]; then
+        echo "Size (-s --size) must be specified." > /dev/stderr
+        exit 1
+    fi
+    OUT=${LNG}/experiments/from_${INIT_TYPE}${SP_SIZE}k
+fi
 INIT_ALLOWED=init.allowed
 
 
@@ -48,7 +57,7 @@ if [ ! -d ${OUT} ]; then
 fi
 
 if [ ! -f ${OUT}/${INIT_ALLOWED} ]; then
-    echo \"${INIT_ALLOWED}\" should be a file with initial segmentation. > /dev/stderr
+    echo \"${OUT}/${INIT_ALLOWED}\" should be a file with initial segmentation. > /dev/stderr
     exit 1
 fi
 
@@ -68,8 +77,8 @@ cd -
 # EXTRACT BIGRAM STATS AND EVALUTE
 # ##################################
 
-source ../env/bin/activate
-python3 ../scripts/distill_count_based_bigram_model.py \
+source ../embeddings_eval/env/bin/activate
+python3 ../subword-segmentation/scripts/distill_count_based_bigram_model.py \
     ${OUT}/${FASTTEXT} ${OUT}/subwords.19 \
     ${OUT}/subword_embeddings.19 \
     ${LNG}/plaintext/${LNG}.lc.txt.vocab.200k \

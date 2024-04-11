@@ -17,5 +17,14 @@ if [ -z ${SIZE} ]; then
     exit 1
 fi
 
-subword-nmt learn-bpe -i ${LNG}/plaintext/${LNG}.lc.txt -o ${LNG}/bpe/${LNG}.bpe${SIZE} -s ${SIZE}000
 
+if [ -z ${MORFESSOR} ]; then
+    INPUT=${LNG}/plaintext/${LNG}.lc.txt
+    OUTPUT=${LNG}/bpe/${LNG}.bpe${SIZE}
+else
+    INPUT=${LNG}/plaintext/${LNG}.lc.morfessor.txt
+    OUTPUT=${LNG}/bpe/${LNG}.morf-bpe${SIZE}
+fi
+
+
+subword-nmt learn-bpe -i ${INPUT} -o ${OUTPUT} -s ${SIZE}000

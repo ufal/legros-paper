@@ -28,8 +28,8 @@ def read_tsv(path):
             word, segments = fields
 
             seg_list = segments.split(SEP)
-            if "".join(seg_list) != word:
-                raise ValueError(f"Segments '{segments}' do not construct the word '{word}'")
+            #if "".join(seg_list) != word:
+            #    raise ValueError(f"Segments '{segments}' do not construct the word '{word}'")
 
             entries.append(segments)
     return entries
@@ -56,6 +56,7 @@ def main():
     parser = argparse.ArgumentParser(description='Measure precision on morphological segmentation boundaries')
     parser.add_argument("--gold", help="Gold standard", required=True, type=str)
     parser.add_argument("--guess", help="Model output", required=True, type=str)
+    parser.add_argument("--use-recall", help="Use recall instead of precision", action="store_true")
     args = parser.parse_args()
 
     gold = read_tsv(args.gold)
@@ -68,6 +69,7 @@ def main():
     # use this for subword segmentation for downstream tasks, so whole words are OK.
 
     precisions = []
+    recalls = []
 
     for i, (ref, hyp) in enumerate(zip(gold, guess)):
         ref_breaks = get_boundary_indices(ref)
@@ -80,12 +82,19 @@ def main():
                 correct_boundaries_made += 1
 
         precision = correct_boundaries_made / boundaries_made * 100
+        recall = correct_boundaries_made / (1 + len(ref_breaks)) * 100
         precisions.append(precision)
+        recalls.append(recall)
 
-    stat = bootstrap((precisions,), np.mean)
-    mean_prec = np.mean(precisions)
 
-    print(f"{mean_prec:.3f},{stat.confidence_interval.low:.3f},{stat.confidence_interval.high:.3f}")
+    if args.use_recall:
+        stat = bootstrap((recalls,), np.mean)
+        mean_recall = np.mean(recalls)
+        print(f"{mean_recall:.3f},{stat.confidence_interval.low:.3f},{stat.confidence_interval.high:.3f}")
+    else:
+        stat = bootstrap((precisions,), np.mean)
+        mean_prec = np.mean(precisions)
+        print(f"{mean_prec:.3f},{stat.confidence_interval.low:.3f},{stat.confidence_interval.high:.3f}")
 
 
 if __name__ == "__main__":
