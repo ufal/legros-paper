@@ -9,7 +9,7 @@ else
     exit 1
 fi
 
-for TYPE in words morf char bpe bpe_ours sp sp_ours morf_bpe morf_bpe_ours morf_sp morf_sp_ours; do
+for TYPE in words morf bpe bpe_ours sp sp_ours morf_bpe morf_bpe_ours morf_sp morf_sp_ours; do
     for LNG in cs en es fr hu it ru; do
             grep Accuracy logs/pos_${LNG}_${TYPE}.*.out | \
                 sed -e "s/.*Accuracy: //;s/%.*//;" | \
