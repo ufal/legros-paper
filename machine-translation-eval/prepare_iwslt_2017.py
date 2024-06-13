@@ -6,16 +6,6 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
-SNAKEFILE = """include: "../Snakefile"
-
-rule all:
-    input:
-        expand(
-            "models/{direction}-{experiment}-{type}-{vocab_size}k/done",
-            experiment=EXPERIMENTS, type=TYPES, vocab_size=VOCAB_SIZES,
-            direction=["LNG1-LNG2", "LNG2-LNG1"])
-"""
-
 
 def process_dataset(name, src2, src3, tgt2, tgt3):
     dir_path = f"{name}/plain_data"
@@ -37,11 +27,13 @@ def process_dataset(name, src2, src3, tgt2, tgt3):
                 print(line[tgt2].lower(), file=f)
 
     logging.info("Snake file for the experiment.")
-    with open(f"{name}/Snakefile", 'w') as f:
-        print(SNAKEFILE.replace('LNG1', src3).replace('LNG2', tgt3), file=f)
+    with open(f"{name}/languages.py", 'w') as f:
+        print(f"LNG1 = '{src3}'", file=f)
+        print(f"LNG2 = '{tgt3}'", file=f)
 
-    logging.info("Linking config.yml into the experiment directory.")
-    os.symlink('config.yml', f"{dir_path}/config.yml")
+    logging.info("Linking Snakefile and config.yml into the experiment directory.")
+    os.symlink('../config.yml', f"{name}/config.yml")
+    os.symlink('../Snakefile', f"{name}/Snakefile")
     logging.info("Done.")
 
 

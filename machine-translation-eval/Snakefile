@@ -2,30 +2,39 @@ subword_segmentation="/lnet/troja/projects/neuralpiece/subword-segmentation"
 sentencepiece="/lnet/troja/projects/neuralpiece/evaluation/sentencepiece/build/src"
 marian_home="/lnet/troja/projects/hplt/marian-dev/build"
 
+from languages import LNG1, LNG2
 
-#VOCAB_SIZES = [8, 16, 32]
-VOCAB_SIZES = [8]
-#TYPES = ["bpe", "unigram"]
-TYPES = ["bpe"]
+VOCAB_SIZES = [4, 8, 16]
+TYPES = ["bpe", "unigram"]
 EXPERIMENTS = ["embedding", "original"]
 PRETOKS = ["words", "morf"]
 
-import glob
+
+rule all:
+    input:
+        expand(
+            "models/{direction}-{pretok}-{type}-{vocab_size}k-{experiment}/done",
+            pretok=PRETOKS,
+            experiment=EXPERIMENTS,
+            type=TYPES,
+            vocab_size=VOCAB_SIZES,
+            direction=[LNG1 + "-" + LNG2, LNG2 + "-" + LNG1])
 
 
 rule joint_sentencepiece_model:
     input:
-        glob.glob("plain_data/train.*")
+        "plain_data/train." + LNG1,
+        "plain_data/train." + LNG2,
     output:
-        "subword-{pretok}-{model_type}-{kwords}k/{model_type}.{kwords}k.model",
-        "subword-{pretok}-{model_type}-{kwords}k/{model_type}.{kwords}k.vocab",
+        "words-{model_type}-{kwords}k-original/{model_type}.{kwords}k.model",
+        "words-{model_type}-{kwords}k-original/{model_type}.{kwords}k.vocab",
     threads: 60
     resources:
         mem="120G",
         cpus_per_task=60
     shell:
         """
-        DIR=subword-{wildcards.pretok}-{wildcards.model_type}-{wildcards.kwords}k
+        DIR=`dirname {output[0]}`
         mkdir -p $DIR
         {sentencepiece}/spm_train \
             --input={input[0]},{input[1]} \
@@ -41,9 +50,9 @@ rule joint_sentencepiece_model:
 rule apply_sentencepiece:
     input:
         data="plain_data/{split}.{lng}",
-        model="subword-words-{model_type}-{kwords}k/{model_type}.{kwords}k.model",
+        model="words-{model_type}-{kwords}k-original/{model_type}.{kwords}k.model",
     output:
-        "subword-words-{model_type}-{kwords}k/{split}.{lng}"
+        "words-{model_type}-{kwords}k-original/{split}.{lng}"
     resources:
         mem="4G",
         cpus_per_task=2
@@ -85,108 +94,103 @@ rule morfessor:
     input:
         "pretokenized/train.{lng}"
     output:
-        "morfessor/{lng}.model"
+        "morfessor/{lng}.model",
+        "morfessor/train.{lng}"
     resources:
         mem="4G",
         cpus_per_task=2
-    shell:
-        """
-        mkdir -p morfessor
-        morfessor-train \
-            --encoding=UTF-8 \
-            --logfile=morfessor/training.log \
-            --save morfessor/model.bin \
-            -d ones \
-            {input}
-        """
+    run:
+        import os
+        os.makedirs("morfessor", exist_ok=True)
+        os.system(f"morfessor-train --encoding=UTF-8 --logfile=morfessor/training.log --save {output[0]} -d ones {input[0]}")
+
+        import morfessor
+        io = morfessor.MorfessorIO()
+        model = io.read_binary_model_file(output[0])
+
+        with open(input[0], "r") as f:
+            with open(output[1], "w") as g:
+                for line in f:
+                    line_tokens = []
+                    for word in line.strip().split():
+                        line_tokens.extend(model.viterbi_segment(word)[0])
+                    print(" ".join(line_tokens), file=g)
 
 
 rule sentencepiece_over_morfessor:
     input:
-        "morfessor/{src}.model",
-        "morfessor/{tgt}.model",
-        "pretokenized/train.{src}",
-        "pretokenized/train.{tgt}"
+        "morfessor/train." + LNG1,
+        "morfessor/train." + LNG2,
     output:
-        morf_pretokenized_src="morfessor/train.{src}",
-        morf_pretokenized_tgt="morfessor/train.{tgt}",
-        model="subword-morf-{model_type}-{kwords}k/{model_type}.{kwords}k.model",
-        vocab="subword-morf-{model_type}-{kwords}k/{model_type}.{kwords}k.vocab",
+        model="morf-{model_type}-{kwords}k-original/{model_type}.{kwords}k.model",
+        vocab="morf-{model_type}-{kwords}k-original/{model_type}.{kwords}k.vocab",
     resources:
         mem="40G",
         cpus_per_task=16
-    run:
-        import morfessor
-        import sentencepiece as spm
+    shell:
+        """
+        DIR=`dirname {output.model}`
+        mkdir -p $DIR
+        VOCAB_SIZE={wildcards.kwords}000
+        # Increase vocab size by 10% because we decrease it later
+        VOCAB_SIZE=$((VOCAB_SIZE * 105 / 100))
 
-        io = morfessor.MorfessorIO()
-        model_src = io.read_binary_model_file(input[0])
-        model_tgt = io.read_binary_model_file(input[1])
-
-        with open(input[2], "r") as f:
-            with open(output.morf_pretokenized_src, "w") as g:
-                for line in f:
-                    line_tokens = []
-                    for word in pretokenize_line(line.strip()).split():
-                        line_tokens.extend(model_src.viterbi_segment(word)[0])
-                    print(" ".join(line_tokens), file=g)
-
-        with open(input[3], "r") as f:
-            with open(output.morf_pretokenized_tgt, "w") as g:
-                for line in f:
-                    line_tokens = []
-                    for word in pretokenize_line(line.strip()).split():
-                        line_tokens.extend(model_tgt.viterbi_segment(word)[0])
-                    print(" ".join(line_tokens), file=g)
-
-        spm.SentencePieceTrainer.train(
-            input=[output.morf_pretokenized_src, output.morf_pretokenized_tgt],
-            model_prefix=output.model,
-            vocab_size=wildcards.kwords * 1000,
-            model_type=wildcards.model_type,
-            input_sentence_size=10000000,
-            shuffle_input_sentence=True,
-            num_threads=16
-        )
+        # Iterarate at most 4 times
+        for i in 1 2 3 4 5 6; do
+            # Decrease the vocab size by 10%
+            VOCAB_SIZE=$((VOCAB_SIZE * 95 / 100))
+            {sentencepiece}/spm_train \
+                --input={input[0]},{input[1]} \
+                --model_prefix=$DIR/{wildcards.model_type}.{wildcards.kwords}k \
+                --vocab_size=$VOCAB_SIZE \
+                --model_type={wildcards.model_type} \
+                --num_threads={threads} \
+                --train_extremely_large_corpus=true \
+                --input_sentence_size=10000000 \
+                --shuffle_input_sentence=true \
+                --shrinking_factor 0.95 && break
+        done
+        """
 
 
 rule apply_morfessor_and_sentencepiece:
     input:
         data="plain_data/{split}.{lng}",
         morf_model="morfessor/{lng}.model",
-        sp_model="subword-morf-{model_type}-{kwords}k/{model_type}.{kwords}k.model",
+        sp_model="morf-{model_type}-{kwords}k-original/{model_type}.{kwords}k.model",
     output:
-        "subword-morf-{model_type}-{kwords}k/{split}.{lng}"
+        "morf-{model_type}-{kwords}k-original/{split}.{lng}"
     resources:
         mem="4G",
         cpus_per_task=2
-        run:
-            import morfessor
-            import sentencepiece as spm
+    run:
+        import morfessor
+        import sentencepiece as spm
 
-            io = morfessor.MorfessorIO()
-            morf_model = io.read_binary_model_file(input.morf_model)
-            sp_model = spm.SentencePieceProcessor(model_file=input.sp_model)
+        io = morfessor.MorfessorIO()
+        morf_model = io.read_binary_model_file(input.morf_model)
+        sp_model = spm.SentencePieceProcessor(model_file=input.sp_model)
 
-            with open(input.data, "r") as f, open(output[0], "w") as g:
-                for line in f:
-                    line_tokens = []
-                    pretok = pretokenize_line(line)
-                    for token in pretok.split():
-                        if token.startswith("▁"):
-                            prefix = "▁"
-                            token = token[1:]
-                        else:
-                            prefix = ""
-                        morf_tokens = morf_model.viterbi_segment(token)
-                        sp_tokens = []
-                        for morf_token in morf_tokens:
-                            sp_tokens.extend(
-                                tok[1:] if tok.startswith("▁") else tok
-                                for tok in sp_model.encode_as_pieces(morf_token))
+        with open(input.data, "r") as f, open(output[0], "w") as g:
+            for line in f:
+                line_tokens = []
+                pretok = pretokenize_line(line)
+                for token in pretok.split():
+                    if token.startswith("▁"):
+                        prefix = "▁"
+                        token = token[1:]
+                    else:
+                        prefix = ""
+                    morf_tokens = morf_model.viterbi_segment(token)[0]
+                    sp_tokens = []
+                    for morf_token in morf_tokens:
+                        sp_tokens.extend(
+                            tok[1:] if tok.startswith("▁") else tok
+                            for tok in sp_model.encode_as_pieces(morf_token))
+                    if sp_tokens:
                         sp_tokens[0] = prefix + sp_tokens[0]
                         line_tokens.extend(sp_tokens)
-                    print(" ".join(line_tokens), file=g)
+                print(" ".join(line_tokens), file=g)
 
 
 rule fasttext:
@@ -209,9 +213,10 @@ rule fasttext:
         {subword_segmentation}/scripts/train_fasttext.py --epochs 30 --num-threads {threads} {input} {params.prefix}
         """
 
+
 rule allowed_init_list_from_sentencepiece:
     input:
-        model="subword-words-{model_type}-{kwords}k/{model_type}.{kwords}k.model",
+        model="words-{model_type}-{kwords}k-original/{model_type}.{kwords}k.model",
         ftvocab="fasttext/{lng}.ft.vocab"
     output:
         "fasttext/allowed.words-{model_type}-{kwords}k.{lng}.init"
@@ -226,7 +231,37 @@ rule allowed_init_list_from_sentencepiece:
         > {output}
         """
 
-# TODO allowed init with morfessor pretok
+
+rule allowed_init_list_from_morfessor:
+    input:
+        morf_model="morfessor/{lng}.model",
+        sp_model="morf-{model_type}-{kwords}k-original/{model_type}.{kwords}k.model",
+        ftvocab="fasttext/{lng}.ft.vocab"
+    output:
+        "fasttext/allowed.morf-{model_type}-{kwords}k.{lng}.init"
+    resources:
+        mem="4G",
+        cpus_per_task=2
+    run:
+        import morfessor
+        import sentencepiece as spm
+
+        morf_model = morfessor.MorfessorIO().read_binary_model_file(input.morf_model)
+        sp_model = spm.SentencePieceProcessor(model_file=input.sp_model)
+
+        with open(input.ftvocab, "r") as f, open(output[0], "w") as g:
+            for line in f:
+                word = line.split()[0]
+                morf_tokens = morf_model.viterbi_segment(word)[0]
+                sp_tokens = []
+                for morf_token in morf_tokens:
+                    sp_tokens.extend(
+                        tok[1:] if tok.startswith("▁") else tok
+                        for tok in sp_model.encode_as_pieces(morf_token))
+                if word.startswith("▁") and sp_tokens:
+                    sp_tokens[0] = "▁" + sp_tokens[0]
+                print(word, " ".join(sp_tokens), file=g)
+
 
 rule subword_embeddings:
     input:
@@ -240,44 +275,41 @@ rule subword_embeddings:
         cpus_per_task=60
     params:
         epochs=10,
-        workdir=lambda wildcards, output: "subword_embs-{}-{}-{}k.{}".format(
-            wildcards.pretok, wildcards.segm_type,
-            wildcards.kwords, wildcards.lng)
     output:
-        "subword_embs-{pretok}-{segm_type}-{kwords}k.{lng}/segmentations.9",
-        "subword_embs-{pretok}-{segm_type}-{kwords}k.{lng}/subwords.9",
-        "subword_embs-{pretok}-{segm_type}-{kwords}k.{lng}/unigram_stats.9",
-        "subword_embs-{pretok}-{segm_type}-{kwords}k.{lng}/bigram_stats.9",
+        "{pretok}-{segm_type}-{kwords}k-embedding.{lng}/segmentations.9",
+        "{pretok}-{segm_type}-{kwords}k-embedding.{lng}/subwords.9",
+        "{pretok}-{segm_type}-{kwords}k-embedding.{lng}/unigram_stats.9",
+        "{pretok}-{segm_type}-{kwords}k-embedding.{lng}/bigram_stats.9",
     shell:
-        # note this assumes params.workdir is a direct subdirectory
         """
-        mkdir -p {params.workdir}
+        DIR=`dirname {output[0]}`
+        mkdir -p $DIR
         {subword_segmentation}/build/train_subword_embeddings \
             {input.word_embeddings} \
             {input.data} \
             --fastext-output-pseudoinverse {input.pseudoinverse} \
             --allowed-substrings {input.allowed} \
             --epochs {params.epochs} \
-            --output-directory {params.workdir}
-        rm -f {params.workdir}/*.{1,2,3,4,5,6,7,8}
+            --output-directory $DIR
+        rm -f $DIR/*.{{1,2,3,4,5,6,7,8}}
         """
 
 
 rule bigram_segment:
     input:
-        bigram_stats="subword_embs-{pretok}-{segm_type}-{kwords}k.{lng}/bigram_stats.9",
-        unigram_stats="subword_embs-{pretok}-{segm_type}-{kwords}k.{lng}/unigram_stats.9",
+        bigram_stats="{pretok}-{segm_type}-{kwords}k-embedding.{lng}/bigram_stats.9",
+        unigram_stats="{pretok}-{segm_type}-{kwords}k-embedding.{lng}/unigram_stats.9",
         data="pretokenized/{split}.{lng}"
     threads: 60
     resources:
         mem="120G",
         cpus_per_task=60
     output:
-        "ours-{segm_type}-{kwords}k/{split}.{lng}"
+        "{pretok}-{segm_type}-{kwords}k-embedding/{split}.{lng}"
     shell:
         # TODO change this to use the Python code with beam search segmentation
         """
-        mkdir -p segmented.{wildcards.segm_type}-{wildcards.kwords}k
+        mkdir -p `dirname {output}`
         {subword_segmentation}/build/bigram_segment \
             {input.bigram_stats} \
             {input.unigram_stats} \
@@ -287,15 +319,15 @@ rule bigram_segment:
 
 rule train_marian:
     input:
-        train_src="{segmentation}-{pretok}-{segm_type}-{kwords}k/train.{src}",
-        train_tgt="{segmentation}-{pretok}-{segm_type}-{kwords}k/train.{tgt}",
-        dev_src="{segmentation}-{pretok}-{segm_type}-{kwords}k/dev.{src}",
-        dev_tgt="{segmentation}-{pretok}-{segm_type}-{kwords}k/dev.{tgt}",
+        train_src="{pretok}-{segm_type}-{kwords}k-{segmentation}/train.{src}",
+        train_tgt="{pretok}-{segm_type}-{kwords}k-{segmentation}/train.{tgt}",
+        dev_src="{pretok}-{segm_type}-{kwords}k-{segmentation}/dev.{src}",
+        dev_tgt="{pretok}-{segm_type}-{kwords}k-{segmentation}/dev.{tgt}",
     output:
-        model="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/model.npz",
-        vocab="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/vocab.yml",
-        decoder_config="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/model.npz.decoder.yml",
-        log="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/train.log",
+        model=protected("models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/model.npz"),
+        vocab=protected("models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/vocab.yml"),
+        decoder_config=protected("models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/model.npz.decoder.yml"),
+        log=protected("models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/train.log"),
     resources:
         mem="40G",
         cpus_per_task=8,
@@ -303,8 +335,11 @@ rule train_marian:
         flags="--gres=gpu:2"
     shell:
         """
-        mkdir -p models/{wildcards.src}-{wildcards.tgt}-{wildcards.segmentation}-{wildcards.pretok}-{wildcards.segm_type}-{wildcards.kwords}k
+        set -ex
+        DIR=`dirname {output.model}`
+        mkdir -p $DIR
         hostname
+        #{marian_home}-dll-3gpu1/marian
         {marian_home}-`hostname`/marian \
             --model {output.model} \
             --log {output.log} \
@@ -313,15 +348,16 @@ rule train_marian:
             --devices 0 1 \
             --train-sets {input.train_src} {input.train_tgt} \
             --valid-sets {input.dev_src} {input.dev_tgt}
+        rm $DIR/model.npz.optimizer.npz
         """
 
 
 rule translate:
     input:
-        decoder_config="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/model.npz.decoder.yml",
-        test_src="{segmentation}-{pretok}-{segm_type}-{kwords}k/{split}.{src}",
+        decoder_config="models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/model.npz.decoder.yml",
+        test_src="{pretok}-{segm_type}-{kwords}k-{segmentation}/{split}.{src}",
     output:
-        test_out="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/{split}.out"
+        test_out="models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/{split}.out"
     resources:
         mem="120G",
         cpus_per_task=8,
@@ -329,6 +365,8 @@ rule translate:
         flags="--gres=gpu:1"
     shell:
         """
+        set -ex
+        #{marian_home}-dll-3gpu1/marian
         {marian_home}-`hostname`/marian-decoder \
             --config {input.decoder_config} \
             < {input.test_src} | \
@@ -339,11 +377,11 @@ rule translate:
 
 rule evaluate:
     input:
-        test_out="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/{split}.out",
+        test_out="models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/{split}.out",
         test_reference="plain_data/{split}.{tgt}"
     output:
-        bleu="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/{split}.bleu",
-        chrf="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/{split}.chrf"
+        bleu="models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/{split}.bleu",
+        chrf="models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/{split}.chrf"
     run:
         import sacrebleu
         with open(input.test_out, encoding="utf8", errors="ignore") as f:
@@ -362,9 +400,9 @@ rule evaluate:
 
 rule done:
     input:
-        test_bleu="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/test.bleu",
-        test_chrf="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/test.chrf",
-        dev_bleu="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/dev.bleu",
-        dev_chrf="models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/dev.chrf",
+        test_bleu="models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/test.bleu",
+        test_chrf="models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/test.chrf",
+        dev_bleu="models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/dev.bleu",
+        dev_chrf="models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/dev.chrf",
     output:
-        touch("models/{src}-{tgt}-{segmentation}-{pretok}-{segm_type}-{kwords}k/done")
+        touch("models/{src}-{tgt}-{pretok}-{segm_type}-{kwords}k-{segmentation}/done")
