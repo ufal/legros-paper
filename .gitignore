@@ -1,3 +1,6 @@
+pos-tagging-eval/logs
+machine-translation-eval/iwslt*
+
 # vim
 **/*.swp
 **/*.swo
