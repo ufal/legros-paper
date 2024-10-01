@@ -1,4 +1,4 @@
-# Lexically Grounded Subword Segmentation -- experimental code
+## Lexically Grounded Subword Segmentation: Experimental Code
 
 This repository accompanies the paper "Lexically Grounded Subword Segmentation" by Jindřich Libovický and Jindřich Helcl. 
 If you find yourself inspired by this, please cite the following paper (watch out for TODOs before November 2024):
