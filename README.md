@@ -8,14 +8,13 @@ If you find yourself inspired by this, please cite the following paper (watch ou
   title="Lexically Grounded Subword Segmentation",
   author = "Libovick{\'y}, Jind{\v{r}}ich and Helcl, Jind{\v{r}}ich",
   editor = "TODO",
-  booktitle = "Proceedings of the 4rd Workshop on Multi-lingual Representation Learning (MRL)",
+  booktitle = "Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing",
   month = nov,
   year = "2024",
-  address = "Miami",
+  address = "Miami, USA",
   publisher = "Association for Computational Linguistics",
   url = "TODO",
   doi = "TODO",
   pages = "TODO"
 }
 ```
-
