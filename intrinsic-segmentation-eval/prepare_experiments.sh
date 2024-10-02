@@ -2,7 +2,7 @@
 
 set -ex
 
-SPM_HOME=/lnet/troja/projects/neuralpiece/evaluation/sentencepiece
+SPM_HOME=../3rd_party/sentencepiece
 
 for LNG in cs en es fr hu it mn ru; do
     VOCAB=${LNG}/fasttext.vocab

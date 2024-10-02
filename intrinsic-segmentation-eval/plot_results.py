@@ -12,7 +12,7 @@ import os
 # In[2]:
 
 
-HOME = "/lnet/troja/projects/neuralpiece/intrinsic-segmentation-eval/"
+HOME = "."
 
 
 # In[3]:
@@ -181,4 +181,3 @@ def plot_sigmorphon(test_set):
 
 fig = plot_sigmorphon("sigmorphon")
 fig.savefig("sigmorphon.pdf", bbox_inches="tight")
-

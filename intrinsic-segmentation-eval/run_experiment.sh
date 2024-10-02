@@ -6,8 +6,7 @@
 
 set -ex
 
-#CPP_HOME=/lnet/troja/projects/neuralpiece/cpp-implementation
-CPP_HOME=/lnet/troja/projects/neuralpiece/subword-segmentation
+CPP_HOME=../legros
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -83,4 +82,3 @@ python3 ../subword-segmentation/scripts/distill_count_based_bigram_model.py \
     ${OUT}/subword_embeddings.19 \
     ${LNG}/plaintext/${LNG}.lc.txt.vocab.200k \
     ${OUT}/bigram_stats
-
