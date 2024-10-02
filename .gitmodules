@@ -4,3 +4,6 @@
 [submodule "legros"]
 	path = legros
 	url = git@github.com:ufal/legros
+[submodule "sentencepiece"]
+	path = 3rd_party/sentencepiece
+	url = git@github.com:google/sentencepiece
