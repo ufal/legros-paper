@@ -24,7 +24,28 @@ If you find yourself inspired by this, please cite the following paper (watch ou
 
 Here follow the instructions for the replication of the paper results.
 
+First off, clone the repository and submodules:
+
+```bash
+git clone https://github.com/ufal/legros-paper
+cd legros-paper
+git submodule update --init --recursive
+```
+
+If you are going to use your own SentencePiece, you can skip the following step. Otherwise, build SentencePiece as follows. (Note that you should first install any SentencePiece prerequisites such as cmake and a C++ compiler.
+
+```bash
+cd 3rd_party/sentencepiece
+mkdir build
+cd build
+cmake ..
+make -j $(nproc)
+```
+
+
+
 #### Prerequisites
+
 
 In order to do everything like us, make sure you have the following tools installed:
 
