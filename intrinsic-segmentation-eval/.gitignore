@@ -10,3 +10,5 @@ mn
 ru
 
 log
+logs
+.snakemake
