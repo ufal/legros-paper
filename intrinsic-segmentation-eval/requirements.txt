@@ -1,0 +1,6 @@
+pulp==2.7.0
+snakemake==7.32.4
+sacremoses==0.1.1
+morfessor==2.0.6
+subword-nmt==0.3.8
+gensim==4.3.3
