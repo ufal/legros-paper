@@ -298,13 +298,14 @@ rule train_legros:
         "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/segmentations.19",
         "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subwords.19",
         "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/unigram_stats.19",
-        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/bigram_stats.19"
+        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/bigram_stats.19",
+        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subword_embeddings.19",
     wildcard_constraints:
         pretok="word|morf",
         segm="spm|bpe"
     threads: 60
     resources:
-        mem="120G",
+        mem="250G",
         cpus_per_task=60
     params:
         epochs=20,
@@ -319,5 +320,24 @@ rule train_legros:
             --epochs {params.epochs} \
             --output-directory {params.output_dir}
 
-        rm {params.output_dir}/{{segmentations,subwords,unigram_stats,bigram_stats}}.{{1..18}}
+        rm {params.output_dir}/{{segmentations,subwords,unigram_stats,bigram_stats,subword_embeddings}}.{{1..18}}
         """
+
+rule distill_bigram:
+    input:
+        ft_model="{lng}/fasttext",
+        subwords="{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subwords.19",
+        embeddings="{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subword_embeddings.19",
+        vocab200k="{lng}/plaintext/{lng}.lc.txt.vocab.200k",
+    output: "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/bigram_stats"
+    shell:
+        """
+        python {legros_home}/scripts/distill_count_based_bigram_model.py \
+            {input.ft_model} \
+            {input.subwords} \
+            {input.embeddings} \
+            {input.vocab200k} \
+            {output}
+        """
+
+
