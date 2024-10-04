@@ -1,5 +1,6 @@
 legros_home = "../legros"
 spm_train = "../3rd_party/sentencepiece/build/src/spm_train"
+spm_encode = "../3rd_party/sentencepiece/build/src/spm_encode"
 decompress = "pigz -cd"
 compress = "pigz -c"
 
@@ -119,10 +120,6 @@ rule train_fasttext:
             --epochs {params.epochs}
         """
 
-
-#lng3=lambda wildcards, output: lng2to3[wildcards.lng]
-
-
 rule download_sigmorphon:
     output: "{lng}/sigmorphon_set.tsv"
     params:
@@ -198,8 +195,9 @@ rule train_spm:
     params:
         prefix=lambda wildcards, output: output.model[:-6],
         sentence_size=50000000
+    threads: 16
     resources:
-        mem="200",
+        mem="60G",
         cpus_per_task=16
     shell:
         """
@@ -213,22 +211,113 @@ rule train_spm:
             --train_extremely_large_corpus=true
         """
 
+rule allowed_init_from_morfessor:
+    input:
+        model="{lng}/morfessor/model.bin",
+        vocab="{lng}/fasttext.vocab"
+    output: "{lng}/experiments/from_morfessor/init.allowed"
+    params:
+        expdir=lambda wildcards, output: output[0][:-13]
+    shell:
+        """
+        mkdir -p {params.expdir}
+        morfessor-segment - -l {input.model} < {input.vocab} \
+            | paste {input.vocab} - > {output}
+        """
+
+
+def resolve_allowed_init_input(wildcards):
+    # when initializing allowed_init from morfessor, we go from its allowed init
+    if wildcards.pretok == "morf":
+        return "{lng}/experiments/from_morfessor/init.allowed".format(lng=wildcards.lng)
+    elif wildcards.pretok == "word":
+        return "{lng}/fasttext.vocab".format(lng=wildcards.lng)
+    raise ValueError("unsupported pretok")
+
+
+rule allowed_init_from_bpe:
+    input:
+        pretok_vocab=resolve_allowed_init_input,
+        vocab="{lng}/fasttext.vocab",
+        model="{lng}/bpe/{lng}.{pretok}-bpe{size_k}",
+    output: "{lng}/experiments/from_{pretok}-bpe-{size_k}k/init.allowed"
+    params:
+        expdir=lambda wildcards, output: output[0][:-13]
+    wildcard_constraints:
+        pretok="word|morf"
+    resources:
+        mem="10G",
+        cpus_per_task=1
+    shell:
+        """
+        mkdir -p {params.expdir}
+        if [ {wildcards.pretok} = "word" ]; then
+            cat {input.pretok_vocab}
+        else
+            cut -f2 {input.pretok_vocab}
+        fi | \
+            subword-nmt apply-bpe -c {input.model} | \
+            sed 's/@@ / /g' | \
+            paste {input.vocab} - > {output}
+        """
+
+rule allowed_init_from_spm:
+    input:
+        pretok_vocab=resolve_allowed_init_input,
+        vocab="{lng}/fasttext.vocab",
+        model="{lng}/spm/{lng}.{pretok}-spm{size_k}.model",
+    output: "{lng}/experiments/from_{pretok}-spm-{size_k}k/init.allowed"
+    params:
+        expdir=lambda wildcards, output: output[0][:-13]
+    wildcard_constraints:
+        pretok="word|morf"
+    threads: 2
+    resources:
+        mem="10G",
+        cpus_per_task=2
+    shell:
+        """
+        mkdir -p {params.expdir}
+        if [ {wildcards.pretok} = "word" ]; then
+            cat {input.pretok_vocab}
+        else
+            cut -f2 {input.pretok_vocab}
+        fi | \
+            {spm_encode} --model {input.model} | \
+            sed 's/▁//g' | \
+            paste -d' ' {input.vocab} - > {output}
+        """
+
 rule train_legros:
     input:
         data="{lng}/plaintext/{lng}.lc.txt",
         ft_emb_text="{lng}/fasttext.txt",
         ft_pinv="{lng}/fasttext.out_inv.txt",
-        allowed="..."
+        allowed="{lng}/experiments/from_{pretok}-{segm}-{size_k}k/init.allowed"
     output:
-        "nothing yet"
+        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/segmentations.19",
+        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subwords.19",
+        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/unigram_stats.19",
+        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/bigram_stats.19"
+    wildcard_constraints:
+        pretok="word|morf",
+        segm="spm|bpe"
+    threads: 60
+    resources:
+        mem="120G",
+        cpus_per_task=60
     params:
-        epochs=20
+        epochs=20,
+        output_dir=lambda wildcards, output: output[0][:-17]
     shell:
         """
-        {legros_home}/build/train_subword_embeddings \
+        {legros_home}/build/legros-train \
             {input.ft_emb_text} \
             {input.data} \
             --fastext-output-pseudoinverse {input.ft_pinv} \
             --allowed-substrings {input.allowed} \
-            --epochs {params.epochs}
+            --epochs {params.epochs} \
+            --output-directory {params.output_dir}
+
+        rm {params.output_dir}/{{segmentations,subwords,unigram_stats,bigram_stats}}.{{1..18}}
         """
