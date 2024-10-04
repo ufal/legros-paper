@@ -1,5 +1,5 @@
 legros_home = "../legros"
-spm_train = "../legros/3rd_party/sentencepiece/build/src/spm_train"
+spm_train = "../3rd_party/sentencepiece/build/src/spm_train"
 decompress = "pigz -cd"
 compress = "pigz -c"
 
@@ -43,7 +43,7 @@ rule download_data:
         mem="32G",
         cpus_per_task=8
     params:
-        datasize=50000000
+        datasize=5000
     shell:
         """
         DIR=`dirname {output}`
@@ -96,11 +96,11 @@ rule train_fasttext:
     input: "{lng}/plaintext/{lng}.lc.txt"
     output:
         model="{lng}/fasttext",
-        aux="{lng}/fasttext.syn1neg.npy",
+        #aux="{lng}/fasttext.syn1neg.npy",
         vocab="{lng}/fasttext.vocab",
         pinv="{lng}/fasttext.out_inv.txt",
         text="{lng}/fasttext.txt",
-        wvvocab="{lng}/fasttext.wv.vectors_vocab.npy",
+        #wvvocab="{lng}/fasttext.wv.vectors_vocab.npy",
         wvngrams="{lng}/fasttext.wv.vectors_ngrams.npy"
     threads: 16
     resources:
@@ -126,10 +126,11 @@ rule train_fasttext:
 rule download_sigmorphon:
     output: "{lng}/sigmorphon_set.tsv"
     params:
-        baseurl="https://raw.githubusercontent.com/sigmorphon/2022SegmentationST/main/data/"
+        baseurl="https://raw.githubusercontent.com/sigmorphon/2022SegmentationST/main/data/",
+        lng3=lambda wildcards, output: lng2to3[wildcards.lng]
     shell:
         """
-        curl '{baseurl}/{lng2to3[wildcards.lng]}.word.test.gold.tsv' | \
+        curl -L '{params.baseurl}/{params.lng3}.word.test.gold.tsv' | \
             python filter_sigmorphon_test_set.py > {output}
         """
 
@@ -153,16 +154,31 @@ rule train_morfessor:
             {input}
         """
 
+rule run_morfessor:
+    input:
+        model="{lng}/morfessor/model.bin",
+        data="{lng}/plaintext/{lng}.lc.txt"
+    output: "{lng}/plaintext/{lng}.lc.morfessor.txt"
+    resources:
+        mem="10G",
+        cpus_per_task=1
+    shell:
+        """
+        python morfessor_pretok.py {input.model} {input.data} > {output}
+        """
+
 def resolve_pretok_input(wildcards):
-    if wildcards.pretok == "morf-":
+    if wildcards.pretok == "word":
         return "{lng}/plaintext/{lng}.lc.txt"
-    elif wildcards.pretok == "":
+    elif wildcards.pretok == "morf":
         return "{lng}/plaintext/{lng}.lc.morfessor.txt"
     raise ValueError("unsupported pretok")
 
 rule train_bpe:
     input: resolve_pretok_input
-    output: "{lng}/bpe/{lng}.bpe{size_k}"
+    output: "{lng}/bpe/{lng}.{pretok}-bpe{size_k}"
+    wildcard_constraints:
+        pretok="word|morf"
     resources:
         mem="50G",
         cpus_per_task=1
@@ -175,12 +191,12 @@ rule train_bpe:
 rule train_spm:
     input: resolve_pretok_input
     output:
-        model="{lng}/spm/{lng}.{pretok}spm{size_k}.model",
-        vocab="{lng}/spm/{lng}.{pretok}spm{size_k}.vocab"
+        model="{lng}/spm/{lng}.{pretok}-spm{size_k}.model",
+        vocab="{lng}/spm/{lng}.{pretok}-spm{size_k}.vocab"
     wildcard_constraints:
-        pretok="^morf-|$"
+        pretok="word|morf"
     params:
-        prefix="{wildcards.lng}/spm/{wildcards.lng}.spm{wildcards.size_k}",
+        prefix=lambda wildcards, output: output.model[:-6],
         sentence_size=50000000
     resources:
         mem="200",
@@ -190,9 +206,10 @@ rule train_spm:
         mkdir -p {wildcards.lng}/spm
         {spm_train} \
             --input {input} \
-            --model_prefix {wildcards.lng}/spm/{wildcards.lng}.spm{wildcards.size_k} \
+            --model_prefix {params.prefix} \
             --num_threads {threads} \
-            --input_sentence_size={params.sentence_size} \
+            --input_sentence_size {params.sentence_size} \
+            --vocab_size {wildcards.size_k}000 \
             --train_extremely_large_corpus=true
         """
 
