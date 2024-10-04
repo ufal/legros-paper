@@ -1,0 +1,217 @@
+legros_home = "../legros"
+spm_train = "../legros/3rd_party/sentencepiece/build/src/spm_train"
+decompress = "pigz -cd"
+compress = "pigz -c"
+
+
+lng2to3 = {
+    "cs": "ces",
+    "en": "eng",
+    "es": "spa",
+    "fr": "fra",
+    "hu": "hun",
+    "it": "ita",
+    "mn": "mon",
+    "ru": "rus"}
+
+rule all:
+    #input: expand("{lng}/fasttext", lng=["cs", "en", "es", "fr", "hu", "it", "mn", "ru"])
+    input: expand("{lng}/fasttext", lng=["cs"])
+
+rule download_data_mn:
+    output: "mn/plaintext/mn.raw.txt.gz"
+    threads: 8
+    resources:
+        mem="32G",
+        cpus_per_task=8
+    shell:
+        """
+        DIR=`dirname {output}`
+        mkdir -p $DIR
+
+        wget https://data.statmt.org/cc-100/mn.txt.xz -O $DIR/mn.txt.xz
+        xzcat $DIR/mn.txt.xz | {compress} > {output}
+        rm $DIR/mn.txt.xz
+        """
+
+rule download_data:
+    output: "{lng}/plaintext/{lng}.raw.txt.gz"
+    wildcard_constraints:
+        lng="cs|en|es|fr|hu|it|ru"
+    threads: 8
+    resources:
+        mem="32G",
+        cpus_per_task=8
+    params:
+        datasize=50000000
+    shell:
+        """
+        DIR=`dirname {output}`
+        echo making $DIR
+        mkdir -p $DIR
+        SIZE=0
+
+        # Download years in decreasing order, until we reach 50M sentences
+
+        for YEAR in {{2021..2007}}; do
+            wget https://data.statmt.org/news-crawl/{wildcards.lng}/news.$YEAR.{wildcards.lng}.shuffled.deduped.gz -O $DIR/tmp.newscrawl.$YEAR.gz
+            YEAR_SIZE=$({decompress} $DIR/tmp.newscrawl.$YEAR.gz | wc -l)
+            SIZE=$(( SIZE + YEAR_SIZE  ))
+            if [ $SIZE -gt {params.datasize} ]; then
+                break
+            fi
+        done
+
+        {decompress} $DIR/tmp.newscrawl.*.gz | shuf -n {params.datasize} | {compress} > {output}
+        rm $DIR/tmp.newscrawl.*.gz
+        """
+
+rule tokenize:
+    input: "{lng}/plaintext/{lng}.raw.txt.gz"
+    output: "{lng}/plaintext/{lng}.lc.txt"
+    threads: 32
+    resources:
+        mem="64G",
+        cpus_per_task=32
+    shell:
+        "{decompress} {input} | sacremoses -j {threads} -l {wildcards.lng} tokenize -x | sed 's/[[:upper:]]*/\L&/g' > {output}"
+
+
+rule get_vocabulary:
+    input: "{lng}/plaintext/{lng}.lc.txt"
+    output:
+        vocab="{lng}/plaintext/{lng}.lc.txt.vocab",
+        vocab200k="{lng}/plaintext/{lng}.lc.txt.vocab.200k"
+    threads: 32
+    resources:
+        mem="32G",
+        cpus_per_task=32
+    shell:
+        """
+        python3 get_vocabulary.py {input} --min-count 5 --num-threads {threads} > {output.vocab}
+        head -n 200000 {output.vocab} > {output.vocab200k}
+        """
+
+rule train_fasttext:
+    input: "{lng}/plaintext/{lng}.lc.txt"
+    output:
+        model="{lng}/fasttext",
+        aux="{lng}/fasttext.syn1neg.npy",
+        vocab="{lng}/fasttext.vocab",
+        pinv="{lng}/fasttext.out_inv.txt",
+        text="{lng}/fasttext.txt",
+        wvvocab="{lng}/fasttext.wv.vectors_vocab.npy",
+        wvngrams="{lng}/fasttext.wv.vectors_ngrams.npy"
+    threads: 16
+    resources:
+        mem="32G",
+        cpus_per_task=16
+    params:
+        dimension=200,
+        vocab_size=200000,
+        epochs=10
+    shell:
+        """
+        python3 {legros_home}/scripts/train_fasttext.py {input} {output.model} \
+            --num-threads {threads} \
+            --dimension {params.dimension} \
+            --vocab-size {params.vocab_size} \
+            --epochs {params.epochs}
+        """
+
+
+#lng3=lambda wildcards, output: lng2to3[wildcards.lng]
+
+
+rule download_sigmorphon:
+    output: "{lng}/sigmorphon_set.tsv"
+    params:
+        baseurl="https://raw.githubusercontent.com/sigmorphon/2022SegmentationST/main/data/"
+    shell:
+        """
+        curl '{baseurl}/{lng2to3[wildcards.lng]}.word.test.gold.tsv' | \
+            python filter_sigmorphon_test_set.py > {output}
+        """
+
+rule train_morfessor:
+    input: "{lng}/plaintext/{lng}.lc.txt.vocab"
+    output:
+        model="{lng}/morfessor/model.bin",
+        log="{lng}/morfessor/training.log"
+    resources:
+        mem="10G",
+        cpus_per_task=1
+    shell:
+        """
+        mkdir -p {wildcards.lng}/morfessor
+        morfessor-train \
+            --encoding=UTF-8 \
+            --traindata-list \
+            --logfile {output.log} \
+            --save {output.model} \
+            -d ones \
+            {input}
+        """
+
+def resolve_pretok_input(wildcards):
+    if wildcards.pretok == "morf-":
+        return "{lng}/plaintext/{lng}.lc.txt"
+    elif wildcards.pretok == "":
+        return "{lng}/plaintext/{lng}.lc.morfessor.txt"
+    raise ValueError("unsupported pretok")
+
+rule train_bpe:
+    input: resolve_pretok_input
+    output: "{lng}/bpe/{lng}.bpe{size_k}"
+    resources:
+        mem="50G",
+        cpus_per_task=1
+    shell:
+        """
+        mkdir -p {wildcards.lng}/bpe
+        subword-nmt learn-bpe -i {input} -o {output} -s {wildcards.size_k}000
+        """
+
+rule train_spm:
+    input: resolve_pretok_input
+    output:
+        model="{lng}/spm/{lng}.{pretok}spm{size_k}.model",
+        vocab="{lng}/spm/{lng}.{pretok}spm{size_k}.vocab"
+    wildcard_constraints:
+        pretok="^morf-|$"
+    params:
+        prefix="{wildcards.lng}/spm/{wildcards.lng}.spm{wildcards.size_k}",
+        sentence_size=50000000
+    resources:
+        mem="200",
+        cpus_per_task=16
+    shell:
+        """
+        mkdir -p {wildcards.lng}/spm
+        {spm_train} \
+            --input {input} \
+            --model_prefix {wildcards.lng}/spm/{wildcards.lng}.spm{wildcards.size_k} \
+            --num_threads {threads} \
+            --input_sentence_size={params.sentence_size} \
+            --train_extremely_large_corpus=true
+        """
+
+rule train_legros:
+    input:
+        data="{lng}/plaintext/{lng}.lc.txt",
+        ft_emb_text="{lng}/fasttext.txt",
+        ft_pinv="{lng}/fasttext.out_inv.txt",
+        allowed="..."
+    output:
+        "nothing yet"
+    params:
+        epochs=20
+    shell:
+        """
+        {legros_home}/build/train_subword_embeddings \
+            {input.ft_emb_text} \
+            {input.data} \
+            --fastext-output-pseudoinverse {input.ft_pinv} \
+            --allowed-substrings {input.allowed} \
+            --epochs {params.epochs}
+        """

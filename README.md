@@ -20,7 +20,7 @@ If you find yourself inspired by this, please cite the following paper (watch ou
 ```
 
 
-### Steps to reproduce results
+### Steps to reproduce
 
 Here follow the instructions for the replication of the paper results.
 
@@ -46,6 +46,12 @@ make -j $(nproc)
 
 #### Prerequisites
 
+For all experiments, we use Python version 3.10.7. If you are using a virtual
+environment, consider running `pip install -U setuptools` before installing the
+prerequisites.
+
+
+
 
 In order to do everything like us, make sure you have the following tools installed:
 
@@ -55,4 +61,6 @@ In order to do everything like us, make sure you have the following tools instal
   The `spm_*` executables will be located in
   `3rd_party/sentencepiece/build/src` in the end.
 
-* Snakemake
+* Snakemake (installed via pip)
+
+* Pigz - can be replaced with gzip/gunzip in the Snakefiles.

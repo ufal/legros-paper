@@ -1,5 +1,9 @@
 # Initrinsic evaluation of the tokenizer
 
+### Prerequisites
+
+`pip install -r requirements.txt`
+
 ## Prepare training data
 
 Preparing training includes (1) downlowding News Crawl (or CC-100 for
@@ -87,6 +91,3 @@ bash eval_all_experiments.sh
 ```
 
 for continuous evaluation of experiments that already finished experiments.
-
-
-
