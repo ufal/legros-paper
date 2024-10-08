@@ -387,7 +387,7 @@ rule evaluate_embedding_based:
         cp {output.score_file} {output.recall_file}
         
         cut -f1 {input.testset} | \
-            PYTHONPATH={legros_home} python -m legros.segment_vocab_with_subword_embeddings \
+            PYTHONPATH={legros_home}/python python -m legros.segment_vocab_with_subword_embeddings \
                 {input.fasttext} \
                 {input.subwords} \
                 {input.subword_embeddings} | \
@@ -419,7 +419,7 @@ rule evaluate_bigram_based:
         cp {output.score_file} {output.recall_file}
         
         cut -f1 {input.testset} | \
-            PYTHONPATH={legros_home} python -m legros.segment_vocab_with_bigram_stats \
+            PYTHONPATH={legros_home}/python python -m legros.segment_vocab_with_bigram_stats \
                 --greedy {input.bigram_stats} | \
                 paste <(cut -f1 {input.testset}) - > {output.output_file}
 
