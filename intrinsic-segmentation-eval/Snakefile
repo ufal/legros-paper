@@ -28,19 +28,7 @@ rule all:
             lng=all_langs, pretok=pretok_types, segm=segm_types, size_k=vocab_sizes_k, method=evaluations),
         expand("{lng}/experiments/from_morfessor/sigmorphon.{method}.fscore",
             lng=all_langs, method=evaluations)
-            
 
-    #input: expand("{lng}/morfessor/model.bin", lng=all_langs)
-    #input: expand("{lng}/fasttext", lng=["cs"])
-    # input: expand("{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subwords.19", \
-    #               lng=all_langs, \
-    #               pretok=pretok_types, \
-    #               segm=segm_types, \
-    #               size_k=vocab_sizes_k)
-    #
-    #input: expand("{lng}/experiments/from_{pretok}-{segm}-{size_k}k/bigram_stats", \
-    #              lng=all_langs, pretok=pretok_types, segm=segm_types, size_k=vocab_sizes_k)
-    #input: "cs/experiments/from_word-bpe-1k/sigmorphon.bigrams.fscore"
 
 rule download_data_mn:
     output: "mn/plaintext/mn.raw.txt.gz"
@@ -57,6 +45,7 @@ rule download_data_mn:
         xzcat $DIR/mn.txt.xz | {compress} > {output}
         rm $DIR/mn.txt.xz
         """
+
 
 rule download_data:
     output: "{lng}/plaintext/{lng}.raw.txt.gz"
@@ -90,6 +79,7 @@ rule download_data:
         rm $DIR/tmp.newscrawl.*.gz
         """
 
+
 rule tokenize:
     input: "{lng}/plaintext/{lng}.raw.txt.gz"
     output: "{lng}/plaintext/{lng}.lc.txt"
@@ -115,6 +105,7 @@ rule get_vocabulary:
         python3 get_vocabulary.py {input} --min-count 5 --num-threads {threads} > {output.vocab}
         head -n 200000 {output.vocab} > {output.vocab200k}
         """
+
 
 rule train_fasttext:
     input: "{lng}/plaintext/{lng}.lc.txt"
@@ -142,6 +133,7 @@ rule train_fasttext:
             --vocab-size {params.vocab_size} \
             --epochs {params.epochs}
         """
+
 
 rule download_sigmorphon:
     output: "{lng}/sigmorphon_set.tsv"
@@ -174,6 +166,7 @@ rule train_morfessor:
             {input}
         """
 
+
 rule run_morfessor:
     input:
         model="{lng}/morfessor/model.bin",
@@ -187,12 +180,14 @@ rule run_morfessor:
         python morfessor_pretok.py {input.model} {input.data} > {output}
         """
 
+
 def resolve_pretok_input(wildcards):
     if wildcards.pretok == "word":
         return "{lng}/plaintext/{lng}.lc.txt"
     elif wildcards.pretok == "morf":
         return "{lng}/plaintext/{lng}.lc.morfessor.txt"
     raise ValueError("unsupported pretok")
+
 
 rule train_bpe:
     input: resolve_pretok_input
@@ -207,6 +202,7 @@ rule train_bpe:
         mkdir -p {wildcards.lng}/bpe
         subword-nmt learn-bpe -i {input} -o {output} -s {wildcards.size_k}000
         """
+
 
 rule train_spm:
     input: resolve_pretok_input
@@ -234,6 +230,7 @@ rule train_spm:
             --vocab_size {wildcards.size_k}000 \
             --train_extremely_large_corpus=true
         """
+
 
 rule allowed_init_from_morfessor:
     input:
@@ -285,6 +282,7 @@ rule allowed_init_from_bpe:
             paste {input.vocab} - > {output}
         """
 
+
 rule allowed_init_from_spm:
     input:
         pretok_vocab=resolve_allowed_init_input,
@@ -311,6 +309,7 @@ rule allowed_init_from_spm:
             sed 's/▁//g' | \
             paste -d' ' {input.vocab} - > {output}
         """
+
 
 rule train_legros:
     input:
@@ -344,6 +343,7 @@ rule train_legros:
         rm {params.output_dir}/{{segmentations,subwords,unigram_stats,bigram_stats,subword_embeddings}}.{{1..18}}
         """
 
+
 rule distill_bigram:
     input:
         ft_model="{lng}/fasttext",
@@ -364,6 +364,7 @@ rule distill_bigram:
             {input.vocab200k} \
             {output}
         """
+
 
 rule evaluate_embedding_based:
     input:
@@ -396,6 +397,7 @@ rule evaluate_embedding_based:
         python eval_boundary_precision.py --gold {input.testset} --guess {output.output_file} --use-recall >> {output.recall_file}
         python f_score_from_prec_and_recall.py {output.score_file} {output.recall_file} > {output.fscore_file}            
         """
+
 
 rule evaluate_bigram_based:
     input:
