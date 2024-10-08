@@ -2,92 +2,34 @@
 
 ### Prerequisites
 
+1. Build `legros` and its prerequisites
+2. Build `sentencepiece` inside the `3rd_party` directory at the root of this
+ repository 
+
 `pip install -r requirements.txt`
 
-## Prepare training data
+### Automated evaluation pipeline using Snakemake
 
-Preparing training includes (1) downlowding News Crawl (or CC-100 for
-Mongolian), (2) tokenizing and lowercasing the data and (3) training FastText
-embedding on that data.
+After installing the requirements, make sure to configure Snakemake to
+work with your cluster (see its documentation to figure out how - Snakemake
+supports Slurm backend, which we make use of in the pipeline (see the 
+`resources` property of every rule))
 
-```bash
-bash donwnload_data.sh ${LNG}
-```
+Once everything is set up, consult the rule `all` in `Snakefile` - by default
+it is set to run **all** the intrinsic evaluation experiments. With a CPU 
+cluster containing a few 64-core servers with 256GB RAM the whole pipeline
+takes a few days to finish (not counting debugging time). Most of the time
+the 64-core machines are not necessary (for example, Morfessor does not 
+support parallel processing so everything in this phase runs in a single 
+thread)
 
-## Prepare test data
-
-We use two test sets for intrinsic evaluation:
-
-* Universal Segmentations.
-* Test data from SIGMORPHON 2022 shared task.
-
-Data in universal segmentations come from various sources and they are to a
-large extent automatically generated. To get a reasonable language coverage, we
-split the language vocabulary into deciles and sample 1000/K words from K-th
-decile into the test set.
-
-The test data from the SIGMORPHON 2022 shared task are manually annotated ant
-therefore they should be of better quality. Here, the issue is that in most
-languages, the data contains morpheme instead of morphs. We use a simple
-algorithm to match morphemes to the surface form segments based on longest
-common substring. This algorithm fails for approx. 4% of the words, which we
-discard. We only sample 5k words per language to speedup the evaluation.
+To run the pipeline, simply run the following line (with an appropriate limit
+for concurrent jobs - for example, we use 64):
 
 ```bash
-bash compile_test_data.sh
+snakemake -c64
 ```
 
-## Baselines
-
-As a baseline for segmetnation, we use BPE, Unigram LM from SentencePiece and
-Morphessor.
-
-Scripts:
-
-* `submit_bpe_train.sh`
-
-* `submit_spm_train.sh`
-
-* `submit_morfessor_train.sh`
-
-To submit training all baselines on a SLURM cluster, run
-```bash
-train_baselines_on_slurm.sh
-```
-
-Baselines are need to initialize the actual experiments.
-
-## Experiments
-
-For our experiments, we initialize the tokenization with Unigram SentencePiece
-and BPE.
-
-The first step is to create experiment directories which contain the initial
-subword segmentation.
-
-```bash
-bash prepare_experiments.sh
-```
-
-After than the `run_experiments.sh` script could be used to run the actual
-experiments. It assumes the directory structure from the previous steps and has
-the following arguments:
-
-* `-l` or `--language`
-
-* `-s` or `--size` for initial SentencePiece or BPE size
-
-* `-i` or `--init` for initialization type: one of BPE of SentencePiece
-
-To submit all experiments on SLURM, call
-```bash
-bash submit_all_experiments.sh
-```
-
-Running the experiment does not include the tokenizer evalauation. Run
-
-```bash
-bash eval_all_experiments.sh
-```
-
-for continuous evaluation of experiments that already finished experiments.
+At the end, the `score`, `recall` and `fscore` files should appear with the 
+results similar to the ones in our paper. There is randomness in how you shuffle
+the data before trimming it on 50M sentences.
