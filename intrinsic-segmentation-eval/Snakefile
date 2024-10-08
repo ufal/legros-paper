@@ -15,14 +15,32 @@ lng2to3 = {
     "mn": "mon",
     "ru": "rus"}
 
+
+all_langs = ["cs", "en", "es", "fr", "hu", "it", "mn", "ru"]
+segm_types = ["spm", "bpe"]
+pretok_types = ["word", "morf"]
+vocab_sizes_k = [1, 2, 4, 8, 16, 24, 32, 48]
+evaluations = ["embedding-based", "bigrams"]
+
 rule all:
-    #input: expand("{lng}/fasttext", lng=["cs", "en", "es", "fr", "hu", "it", "mn", "ru"])
+    input:
+        expand("{lng}/experiments/from_{pretok}-{segm}-{size_k}k/sigmorphon.{method}.fscore",
+            lng=all_langs, pretok=pretok_types, segm=segm_types, size_k=vocab_sizes_k, method=evaluations),
+        expand("{lng}/experiments/from_morfessor/sigmorphon.{method}.fscore",
+            lng=all_langs, method=evaluations)
+            
+
+    #input: expand("{lng}/morfessor/model.bin", lng=all_langs)
     #input: expand("{lng}/fasttext", lng=["cs"])
-    input: expand("{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subwords.19", \
-                  lng=["cs"], \
-                  pretok=["word", "morf"], \
-                  segm=["spm", "bpe"], \
-                  size_k=[1, 2, 4, 8, 16, 24, 32, 48, 56, 64, 72, 80, 96, 128])
+    # input: expand("{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subwords.19", \
+    #               lng=all_langs, \
+    #               pretok=pretok_types, \
+    #               segm=segm_types, \
+    #               size_k=vocab_sizes_k)
+    #
+    #input: expand("{lng}/experiments/from_{pretok}-{segm}-{size_k}k/bigram_stats", \
+    #              lng=all_langs, pretok=pretok_types, segm=segm_types, size_k=vocab_sizes_k)
+    #input: "cs/experiments/from_word-bpe-1k/sigmorphon.bigrams.fscore"
 
 rule download_data_mn:
     output: "mn/plaintext/mn.raw.txt.gz"
@@ -199,11 +217,12 @@ rule train_spm:
         pretok="word|morf"
     params:
         prefix=lambda wildcards, output: output.model[:-6],
-        sentence_size=50000000
-    threads: 16
+        #sentence_size=lambda wildcards, output: 5000000 if wildcards.pretok == "word" else 100000000 # this used to be 50M, but we reduce it to 5M in case of word
+        sentence_size=5000000  # turns out morf pretok also OOMs.
+    threads: 32
     resources:
-        mem="120G",
-        cpus_per_task=16
+        mem="200G",
+        cpus_per_task=32
     shell:
         """
         mkdir -p {wildcards.lng}/spm
@@ -298,16 +317,13 @@ rule train_legros:
         data="{lng}/plaintext/{lng}.lc.txt",
         ft_emb_text="{lng}/fasttext.txt",
         ft_pinv="{lng}/fasttext.out_inv.txt",
-        allowed="{lng}/experiments/from_{pretok}-{segm}-{size_k}k/init.allowed"
+        allowed="{lng}/experiments/from_{experiment}/init.allowed"
     output:
-        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/segmentations.19",
-        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subwords.19",
-        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/unigram_stats.19",
-        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/bigram_stats.19",
-        "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subword_embeddings.19",
-    wildcard_constraints:
-        pretok="word|morf",
-        segm="spm|bpe"
+        "{lng}/experiments/from_{experiment}/segmentations.19",
+        "{lng}/experiments/from_{experiment}/subwords.19",
+        "{lng}/experiments/from_{experiment}/unigram_stats.19",
+        "{lng}/experiments/from_{experiment}/bigram_stats.19",
+        "{lng}/experiments/from_{experiment}/subword_embeddings.19",
     threads: 60
     resources:
         mem="250G",
@@ -331,10 +347,14 @@ rule train_legros:
 rule distill_bigram:
     input:
         ft_model="{lng}/fasttext",
-        subwords="{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subwords.19",
-        embeddings="{lng}/experiments/from_{pretok}-{segm}-{size_k}k/subword_embeddings.19",
-        vocab200k="{lng}/plaintext/{lng}.lc.txt.vocab.200k",
-    output: "{lng}/experiments/from_{pretok}-{segm}-{size_k}k/bigram_stats"
+        subwords="{lng}/experiments/from_{experiment}/subwords.19",
+        embeddings="{lng}/experiments/from_{experiment}/subword_embeddings.19",
+        vocab200k="{lng}/plaintext/{lng}.lc.txt.vocab.200k"
+    output: "{lng}/experiments/from_{experiment}/bigram_stats"
+    threads: 1
+    resources:
+        mem="10G",
+        cpus_per_task=1
     shell:
         """
         python {legros_home}/scripts/distill_count_based_bigram_model.py \
@@ -345,4 +365,63 @@ rule distill_bigram:
             {output}
         """
 
+rule evaluate_embedding_based:
+    input:
+        testset="{lng}/sigmorphon_set.tsv",
+        subwords="{lng}/experiments/from_{experiment}/subwords.19",
+        subword_embeddings="{lng}/experiments/from_{experiment}/subword_embeddings.19",
+        fasttext="{lng}/fasttext"
+    output:
+        score_file="{lng}/experiments/from_{experiment}/sigmorphon.embedding-based.score",
+        recall_file="{lng}/experiments/from_{experiment}/sigmorphon.embedding-based.recall",
+        fscore_file="{lng}/experiments/from_{experiment}/sigmorphon.embedding-based.fscore",
+        output_file="{lng}/experiments/from_{experiment}/sigmorphon.embedding-based.output.tsv"
+    threads: 1
+    resources:
+        mem="10G",
+        cpus_per_task=1
+    shell:
+        """
+        wc -l < {input.subwords} | tr '\n' ',' > {output.score_file}
+        cp {output.score_file} {output.recall_file}
+        
+        cut -f1 {input.testset} | \
+            PYTHONPATH={legros_home} python -m legros.segment_vocab_with_subword_embeddings \
+                {input.fasttext} \
+                {input.subwords} \
+                {input.subword_embeddings} | \
+            paste <(cut -f1 {input.testset}) - > {output.output_file}
 
+        python eval_boundary_precision.py --gold {input.testset} --guess {output.output_file} >> {output.score_file}
+        python eval_boundary_precision.py --gold {input.testset} --guess {output.output_file} --use-recall >> {output.recall_file}
+        python f_score_from_prec_and_recall.py {output.score_file} {output.recall_file} > {output.fscore_file}            
+        """
+
+rule evaluate_bigram_based:
+    input:
+        testset="{lng}/sigmorphon_set.tsv",
+        subwords="{lng}/experiments/from_{experiment}/subwords.19",
+        bigram_stats="{lng}/experiments/from_{experiment}/bigram_stats",
+    output:
+        score_file="{lng}/experiments/from_{experiment}/sigmorphon.bigrams.score",
+        recall_file="{lng}/experiments/from_{experiment}/sigmorphon.bigrams.recall",
+        fscore_file="{lng}/experiments/from_{experiment}/sigmorphon.bigrams.fscore",
+        output_file="{lng}/experiments/from_{experiment}/sigmorphon.bigrams.output.tsv"
+    threads: 1
+    resources:
+        mem="10G",
+        cpus_per_task=1
+    shell:
+        """
+        wc -l < {input.subwords} | tr '\n' ',' > {output.score_file}
+        cp {output.score_file} {output.recall_file}
+        
+        cut -f1 {input.testset} | \
+            PYTHONPATH={legros_home} python -m legros.segment_vocab_with_bigram_stats \
+                --greedy {input.bigram_stats} | \
+                paste <(cut -f1 {input.testset}) - > {output.output_file}
+
+        python eval_boundary_precision.py --gold {input.testset} --guess {output.output_file} >> {output.score_file}
+        python eval_boundary_precision.py --gold {input.testset} --guess {output.output_file} --use-recall >> {output.recall_file}
+        python f_score_from_prec_and_recall.py {output.score_file} {output.recall_file} > {output.fscore_file}            
+        """
