@@ -42,8 +42,6 @@ rule all_pos_evaluation:
                segm=["bpe", "spm"])
 
         
-
-
 def get_tagger_flags(wildcards):
     inputs = resolve_tagger_inputs(wildcards)
     flags = tagger_flags[(wildcards.experiment, wildcards.segm, wildcards.pretok)]
@@ -83,12 +81,8 @@ rule run_tagger:
         flags="--gres=gpu:1 --constraint='gpuram16G|gpuram24G|gpuram48G'"
     shell:
         """
+        mkdir -p experiments
         PYTHONPATH={legros_home}/python python pos_tagger.py {wildcards.lng} {params.flags} \
             --seed {wildcards.seed} 2>&1 | tee {output}
         """
 
-
-
-rule test:
-    output: "test.out"
-    shell: "echo {pretok_types} > {output}"
