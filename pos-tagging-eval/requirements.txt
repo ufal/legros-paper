@@ -1,0 +1,4 @@
+# this is on top of the requirements from the intrinsic evaluation step
+
+sentencepiece==0.2.0
+torch==2.4.1

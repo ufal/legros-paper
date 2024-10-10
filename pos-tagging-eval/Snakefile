@@ -1,0 +1,94 @@
+legros_home = "../legros"
+intrinsic_eval_home = "../intrinsic-segmentation-eval"
+
+include: "{}/Snakefile".format(intrinsic_eval_home)
+
+pos_langs = ["cs", "en", "es", "fr", "hu", "it", "ru"]
+seeds = list(range(1, 11))
+
+# experiment - segm - pretok
+tagger_flags = {
+    ("orig", "none", "word"): "",
+    ("orig", "none", "morf"): "--morfessor {input[morfessor_model]}",
+    ("orig", "none", "char"): "--subwords char",
+
+    ("orig", "bpe", "word"): "--subwords bpe --subword-model {input[subword_model]}",
+    ("orig", "bpe", "morf"): "--subwords bpe --subword-model {input[subword_model]} --morfessor {input[morfessor_model]}",
+    ("orig", "spm", "word"): "--subwords sp --subword-model {input[subword_model]}",
+    ("orig", "spm", "morf"): "--subwords sp --subword-model {input[subword_model]} --morfessor {input[morfessor_model]}",
+
+    ("bigram", "bpe", "word"): "--subwords bigram --subword-model {input[subword_model]}",
+    ("bigram", "bpe", "morf"): "--subwords bigram --subword-model {input[subword_model]}",
+    ("bigram", "spm", "word"): "--subwords bigram --subword-model {input[subword_model]}",
+    ("bigram", "spm", "morf"): "--subwords bigram --subword-model {input[subword_model]}"
+}
+
+
+rule all_pos_evaluation:
+    input: 
+        expand("experiments/pos-{lng}-bigram-{pretok}-{segm}-32k-{seed}.out",
+                lng=pos_langs,               
+                pretok=["word", "morf"],
+                segm=["bpe", "spm"],
+                seed=seeds),
+        expand("experiments/pos-{lng}-orig-{pretok}-none-00k-{seed}.out",
+               lng=pos_langs, 
+               seed=seeds, 
+               pretok=["word", "morf", "char"]),
+        expand("experiments/pos-{lng}-orig-{pretok}-{segm}-32k-{seed}.out",
+               lng=pos_langs, 
+               seed=seeds, 
+               pretok=["word", "morf"],
+               segm=["bpe", "spm"])
+
+        
+
+
+def get_tagger_flags(wildcards):
+    inputs = resolve_tagger_inputs(wildcards)
+    flags = tagger_flags[(wildcards.experiment, wildcards.segm, wildcards.pretok)]
+    return flags.format(input=inputs)
+
+        
+def resolve_tagger_inputs(wildcards):
+    inputs = {}
+    lnghome = f"{intrinsic_eval_home}/{wildcards.lng}"
+
+    if wildcards.pretok == "morf" and wildcards.experiment == "orig":
+        inputs["morfessor_model"] = f"{lnghome}/morfessor/model.bin"
+
+    if wildcards.experiment == "orig" and wildcards.segm != "none":
+        inputs["subword_model"] =f"{lnghome}/{wildcards.segm}/{wildcards.lng}.{wildcards.pretok}-{wildcards.segm}{wildcards.size_k}" 
+        if wildcards.segm == "spm":
+            inputs["subword_model"] += ".model"
+
+    if wildcards.experiment == "bigram" and wildcards.segm != "none":
+        inputs["subword_model"] =  f"{lnghome}/experiments/from_{wildcards.pretok}-{wildcards.segm}-{wildcards.size_k}k/bigram_stats"
+
+    return inputs
+
+
+rule run_tagger:
+    input: unpack(resolve_tagger_inputs)
+    output: "experiments/pos-{lng}-{experiment}-{pretok}-{segm}-{size_k}k-{seed}.out"
+    wildcard_constraints:
+        pretok="word|morf|char",
+        segm="bpe|spm|none",
+        experiment="orig|bigram"
+    params:
+        flags=get_tagger_flags
+    resources:
+        mem="16G",
+        partition="gpu-troja,gpu-ms",
+        flags="--gres=gpu:1 --constraint='gpuram16G|gpuram24G|gpuram48G'"
+    shell:
+        """
+        PYTHONPATH={legros_home}/python python pos_tagger.py {wildcards.lng} {params.flags} \
+            --seed {wildcards.seed} 2>&1 | tee {output}
+        """
+
+
+
+rule test:
+    output: "test.out"
+    shell: "echo {pretok_types} > {output}"

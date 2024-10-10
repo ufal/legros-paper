@@ -19,8 +19,8 @@ import torch.optim as optim
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from neuralpiece.model import Model as OurModel
-from neuralpiece.vocab import Vocab as OurVocab
+from legros.model import Model as OurModel
+from legros.vocab import Vocab as OurVocab
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')

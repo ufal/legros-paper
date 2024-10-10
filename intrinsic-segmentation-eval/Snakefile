@@ -22,7 +22,7 @@ pretok_types = ["word", "morf"]
 vocab_sizes_k = [1, 2, 4, 8, 16, 24, 32, 48]
 evaluations = ["embedding-based", "bigrams"]
 
-rule all:
+rule all_intrinsic_evaluation:
     input:
         expand("{lng}/experiments/from_{pretok}-{segm}-{size_k}k/sigmorphon.{method}.fscore",
             lng=all_langs, pretok=pretok_types, segm=segm_types, size_k=vocab_sizes_k, method=evaluations),
@@ -427,3 +427,4 @@ rule evaluate_bigram_based:
         python eval_boundary_precision.py --gold {input.testset} --guess {output.output_file} --use-recall >> {output.recall_file}
         python f_score_from_prec_and_recall.py {output.score_file} {output.recall_file} > {output.fscore_file}            
         """
+
