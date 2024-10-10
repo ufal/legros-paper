@@ -1,2 +1,4 @@
 .snakemake
 experiments
+results-mean.csv
+results-std.csv

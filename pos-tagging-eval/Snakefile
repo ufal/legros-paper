@@ -6,6 +6,19 @@ include: "{}/Snakefile".format(intrinsic_eval_home)
 pos_langs = ["cs", "en", "es", "fr", "hu", "it", "ru"]
 seeds = list(range(1, 11))
 
+experiments = [
+    "orig-word-none-00k",
+    "orig-morf-none-00k",
+    "orig-word-bpe-32k",
+    "bigram-word-bpe-32k",
+    "orig-word-spm-32k",
+    "bigram-word-spm-32k",
+    "orig-morf-bpe-32k",
+    "bigram-morf-bpe-32k",
+    "orig-morf-spm-32k",
+    "bigram-morf-spm-32k"
+]
+
 # experiment - segm - pretok
 tagger_flags = {
     ("orig", "none", "word"): "",
@@ -25,21 +38,7 @@ tagger_flags = {
 
 
 rule all_pos_evaluation:
-    input: 
-        expand("experiments/pos-{lng}-bigram-{pretok}-{segm}-32k-{seed}.out",
-                lng=pos_langs,               
-                pretok=["word", "morf"],
-                segm=["bpe", "spm"],
-                seed=seeds),
-        expand("experiments/pos-{lng}-orig-{pretok}-none-00k-{seed}.out",
-               lng=pos_langs, 
-               seed=seeds, 
-               pretok=["word", "morf", "char"]),
-        expand("experiments/pos-{lng}-orig-{pretok}-{segm}-32k-{seed}.out",
-               lng=pos_langs, 
-               seed=seeds, 
-               pretok=["word", "morf"],
-               segm=["bpe", "spm"])
+    input: "results-mean.csv", "results-std.csv"
 
         
 def get_tagger_flags(wildcards):
@@ -68,7 +67,7 @@ def resolve_tagger_inputs(wildcards):
 
 rule run_tagger:
     input: unpack(resolve_tagger_inputs)
-    output: "experiments/pos-{lng}-{experiment}-{pretok}-{segm}-{size_k}k-{seed}.out"
+    output: protected("experiments/pos-{lng}-{experiment}-{pretok}-{segm}-{size_k}k-{seed}.out")
     wildcard_constraints:
         pretok="word|morf|char",
         segm="bpe|spm|none",
@@ -86,3 +85,44 @@ rule run_tagger:
             --seed {wildcards.seed} 2>&1 | tee {output}
         """
 
+
+rule collect_results_mean:
+    input:
+        expand("experiments/pos-{lng}-{experiment}-{seed}.out",
+               lng=pos_langs,
+               experiment=experiments,
+               seed=seeds)
+    output: "results-mean.csv"
+    shell:
+        """
+        for TYPE in {experiments}; do
+            for LNG in {pos_langs}; do
+                grep 'Accuracy' experiments/pos-$LNG-$TYPE-*.out | \
+                    sed -e "s/.*Accuracy: //;s/%.*//;" | \
+                    awk '{{ total += $1; count++ }} END {{ print total/count }}' | \
+                    tr '\n' ','
+            done
+            echo
+        done | sed -e 's/,$//' > {output}
+        """
+
+
+rule collect_results_std:
+    input:
+        expand("experiments/pos-{lng}-{experiment}-{seed}.out",
+               lng=pos_langs,
+               experiment=experiments,
+               seed=seeds)
+    output: "results-std.csv"
+    shell:
+        """
+        for TYPE in {experiments}; do
+            for LNG in {pos_langs}; do
+                grep 'Accuracy' experiments/pos-$LNG-$TYPE-*.out | \
+                    sed -e "s/.*Accuracy: //;s/%.*//;" | \
+                    awk '{{ total += $1; square += $1*$1; count++ }} END {{ print sqrt(square/count - (total/count)**2) }}' | \
+                    tr '\n' ','
+            done
+            echo
+        done | sed -e 's/,$//' > {output}
+        """
