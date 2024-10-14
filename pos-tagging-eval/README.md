@@ -15,4 +15,4 @@ After installing prerequisites, running can be as simple as
 Snakemake -c$jobs
 ```
 
-where `$jobs` is the number of concurrent jobs to run. We recommend using a scheduling system and profile settings which would observe the `resources` specifications in the snakemake rules.
+where `$jobs` is the number of concurrent jobs to run. We recommend using a scheduling system and profile settings which would observe the `resources` specifications in the snakemake rules. For running a single experiment with the tagger, we recommend using a 16GB GPU.
