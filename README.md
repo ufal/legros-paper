@@ -1,21 +1,21 @@
 ## Lexically Grounded Subword Segmentation: Experimental Code
 
 This repository accompanies the paper "Lexically Grounded Subword Segmentation" by Jindřich Libovický and Jindřich Helcl.
-If you find yourself inspired by this, please cite the following paper (watch out for TODOs before November 2024):
+If you find yourself inspired by this, please cite the following paper:
 
 ```bibtex
 @inproceedings{libovicky-helcl-2024-lexically,
-  title="Lexically Grounded Subword Segmentation",
-  author = "Libovick{\'y}, Jind{\v{r}}ich and Helcl, Jind{\v{r}}ich",
-  editor = "TODO",
-  booktitle = "Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing",
-  month = nov,
-  year = "2024",
-  address = "Miami, USA",
-  publisher = "Association for Computational Linguistics",
-  url = "TODO",
-  doi = "TODO",
-  pages = "TODO"
+    title = "Lexically Grounded Subword Segmentation",
+    author = "Libovick{\'y}, Jind{\v{r}}ich and Helcl, Jind{\v{r}}ich",
+    editor = "Al-Onaizan, Yaser  and Bansal, Mohit  and Chen, Yun-Nung",
+    booktitle = "Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing",
+    month = nov,
+    year = "2024",
+    address = "Miami, Florida, USA",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2024.emnlp-main.421/",
+    doi = "10.18653/v1/2024.emnlp-main.421",
+    pages = "7403--7420",
 }
 ```
 
